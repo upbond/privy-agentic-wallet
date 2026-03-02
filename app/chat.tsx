@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { usePrivy, useWallets, useFundWallet } from "@privy-io/react-auth";
+import { usePrivy, useWallets } from "@privy-io/react-auth";
 
 interface Message {
   role: "user" | "assistant";
@@ -17,7 +17,6 @@ const SUGGESTIONS = [
 export default function Chat() {
   const { ready, authenticated, login, logout } = usePrivy();
   const { wallets } = useWallets();
-  const { fundWallet } = useFundWallet();
   const embeddedWallet = wallets.find((w) => w.walletClientType === "privy");
 
   const [balance, setBalance] = useState<string | null>(null);
@@ -163,14 +162,14 @@ export default function Chat() {
             <span className="text-xs bg-green-900/50 text-green-400 px-2 py-1 rounded-full border border-green-800">
               Testnet
             </span>
-            {embeddedWallet && (
-              <button
-                onClick={() => fundWallet({ address: embeddedWallet.address })}
-                className="text-xs bg-purple-900/50 text-purple-300 px-2 py-1 rounded-full border border-purple-700 hover:bg-purple-800/50 transition-colors"
-              >
-                Fund
-              </button>
-            )}
+            <a
+              href="https://faucet.quicknode.com/base/sepolia"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs bg-purple-900/50 text-purple-300 px-2 py-1 rounded-full border border-purple-700 hover:bg-purple-800/50 transition-colors"
+            >
+              Faucet
+            </a>
             <button
               onClick={logout}
               className="text-xs text-gray-400 hover:text-white transition-colors"

@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
 
     const agentMessages: Anthropic.MessageParam[] = [...messages];
     let response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
+      model: "claude-haiku-4-5",
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       tools: TOOLS,
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
       agentMessages.push({ role: "user", content: toolResults });
 
       response = await anthropic.messages.create({
-        model: "claude-sonnet-4-6",
+        model: "claude-haiku-4-5",
         max_tokens: 4096,
         system: SYSTEM_PROMPT,
         tools: TOOLS,

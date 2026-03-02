@@ -78,16 +78,6 @@ export function Login3AuthProvider({ children }: { children: ReactNode }) {
     sessionStorage.removeItem(SESSION_KEYS.STATE);
   }, []);
 
-  // Called from callback page after token exchange
-  const setSession = useCallback((token: string) => {
-    const claims = parseIdToken(token);
-    setIdToken(token);
-    setWalletAddress(claims.wallet_address ?? null);
-    setEmail(claims.email ?? null);
-    setSub(claims.sub);
-    sessionStorage.setItem(SESSION_KEYS.ID_TOKEN, token);
-  }, []);
-
   return (
     <Login3AuthContext.Provider
       value={{
@@ -104,16 +94,4 @@ export function Login3AuthProvider({ children }: { children: ReactNode }) {
       {children}
     </Login3AuthContext.Provider>
   );
-}
-
-// Exported for use in callback page
-export function useSetLogin3Session() {
-  const [, setIdToken] = useState<string | null>(null);
-
-  const setSession = useCallback((token: string) => {
-    sessionStorage.setItem(SESSION_KEYS.ID_TOKEN, token);
-    setIdToken(token);
-  }, []);
-
-  return setSession;
 }

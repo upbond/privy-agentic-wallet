@@ -3,9 +3,15 @@
  * No external dependencies (Web Crypto API only)
  */
 
-const LOGIN3_DOMAIN = process.env.NEXT_PUBLIC_LOGIN3_DOMAIN!;
-const LOGIN3_CLIENT_ID = process.env.NEXT_PUBLIC_LOGIN3_CLIENT_ID!;
-const LOGIN3_REDIRECT_URI = process.env.NEXT_PUBLIC_LOGIN3_REDIRECT_URI!;
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing required environment variable: ${name}`);
+  return value;
+}
+
+const LOGIN3_DOMAIN = requireEnv("NEXT_PUBLIC_LOGIN3_DOMAIN");
+const LOGIN3_CLIENT_ID = requireEnv("NEXT_PUBLIC_LOGIN3_CLIENT_ID");
+const LOGIN3_REDIRECT_URI = requireEnv("NEXT_PUBLIC_LOGIN3_REDIRECT_URI");
 const LOGIN3_SCOPES = process.env.NEXT_PUBLIC_LOGIN3_SCOPES ?? "openid profile email wallet";
 
 // ── PKCE helpers ──────────────────────────────────────────

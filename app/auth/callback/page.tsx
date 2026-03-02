@@ -31,9 +31,9 @@ export default function AuthCallback() {
         return;
       }
 
-      // CSRF: verify state
+      // CSRF: verify state (both must exist and match)
       const savedState = sessionStorage.getItem(SESSION_KEYS.STATE);
-      if (state !== savedState) {
+      if (!state || !savedState || state !== savedState) {
         console.error("State mismatch — possible CSRF");
         router.replace("/?error=state_mismatch");
         return;

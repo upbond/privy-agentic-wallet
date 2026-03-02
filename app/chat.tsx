@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { loadStripe } from "@stripe/stripe-js";
+import { useLogin3Auth } from "@/contexts/Login3AuthContext";
 
 interface Message {
   role: "user" | "assistant";
@@ -24,9 +25,22 @@ const SUGGESTIONS = [
 ];
 
 export default function Chat() {
-  const { ready, authenticated, login, logout, user } = usePrivy();
+  const { ready, authenticated: privyAuthenticated, logout: privyLogout, user } = usePrivy();
   const { wallets } = useWallets();
   const embeddedWallet = wallets.find((w) => w.walletClientType === "privy");
+
+  const {
+    isAuthenticated: login3Authenticated,
+    isLoading: login3Loading,
+    walletAddress: login3WalletAddress,
+    startLogin,
+    clearSession,
+  } = useLogin3Auth();
+
+  // User is "authenticated" if Login 3.0 session exists
+  // Privy auth happens automatically via SyncBridge
+  const isAuthenticated = login3Authenticated;
+  const isReady = ready && !login3Loading;
 
   const [balance, setBalance] = useState<string | null>(null);
   const [stripeCustomerId, setStripeCustomerId] = useState<string | null>(null);
@@ -34,7 +48,8 @@ export default function Chat() {
 
   // ── Fetch ETH balance ──────────────────────────────────────────────
   useEffect(() => {
-    if (!embeddedWallet?.address) return;
+    const address = embeddedWallet?.address;
+    if (!address) return;
     fetch("https://sepolia.base.org", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -42,7 +57,7 @@ export default function Chat() {
         jsonrpc: "2.0",
         id: 1,
         method: "eth_getBalance",
-        params: [embeddedWallet.address, "latest"],
+        params: [address, "latest"],
       }),
     })
       .then((r) => r.json())
@@ -89,7 +104,7 @@ export default function Chat() {
 
   // ── Add card via Stripe Checkout (setup mode) ─────────────────────
   async function handleAddCard() {
-    if (!authenticated || !user?.id) return;
+    if (!isAuthenticated || !user?.id) return;
     try {
       const res = await fetch("/api/stripe/setup", {
         method: "POST",
@@ -226,7 +241,14 @@ export default function Chat() {
     send(input);
   }
 
-  if (!ready) {
+  async function handleSignOut() {
+    clearSession();
+    if (privyAuthenticated) {
+      await privyLogout();
+    }
+  }
+
+  if (!isReady) {
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="flex gap-1">
@@ -238,7 +260,7 @@ export default function Chat() {
     );
   }
 
-  if (!authenticated) {
+  if (!isAuthenticated) {
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-6">
         <div className="w-16 h-16 rounded-full bg-purple-600 flex items-center justify-center text-2xl font-bold">
@@ -246,13 +268,13 @@ export default function Chat() {
         </div>
         <div className="text-center">
           <h1 className="text-2xl font-semibold text-white mb-1">Privy Agentic Wallet</h1>
-          <p className="text-gray-400 text-sm">Sign in to manage your wallets on Base Sepolia</p>
+          <p className="text-gray-400 text-sm">Sign in with Login 3.0 to manage your wallets on Base Sepolia</p>
         </div>
         <button
-          onClick={login}
+          onClick={startLogin}
           className="bg-purple-600 hover:bg-purple-500 text-white rounded-xl px-8 py-3 text-sm font-medium transition-colors"
         >
-          Sign In
+          Sign In with Login 3.0
         </button>
       </div>
     );
@@ -275,6 +297,12 @@ export default function Chat() {
                 <span className="ml-2 text-gray-300">
                   {balance !== null ? `${balance} ETH` : "—"}
                 </span>
+              </p>
+            ) : login3WalletAddress ? (
+              <p className="text-xs text-gray-400 font-mono">
+                Login 3.0: {login3WalletAddress.slice(0, 6)}...{login3WalletAddress.slice(-4)}
+                <span className="ml-2 text-gray-500">·</span>
+                <span className="ml-2 text-yellow-400">Privy syncing...</span>
               </p>
             ) : (
               <p className="text-xs text-gray-400">Base Sepolia Testnet</p>
@@ -306,7 +334,7 @@ export default function Chat() {
               Faucet
             </a>
             <button
-              onClick={logout}
+              onClick={handleSignOut}
               className="text-xs text-gray-400 hover:text-white transition-colors"
             >
               Sign Out

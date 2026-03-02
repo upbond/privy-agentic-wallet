@@ -69,8 +69,11 @@ export async function POST(req: NextRequest) {
       messages: agentMessages,
     });
 
-    // Agentic loop: keep running until no more tool calls
-    while (response.stop_reason === "tool_use") {
+    // Agentic loop: keep running until no more tool calls (max 10 iterations)
+    const MAX_TOOL_ROUNDS = 10;
+    let rounds = 0;
+    while (response.stop_reason === "tool_use" && rounds < MAX_TOOL_ROUNDS) {
+      rounds++;
       const toolUseBlocks = response.content.filter(
         (b): b is Anthropic.ToolUseBlock => b.type === "tool_use"
       );
@@ -83,7 +86,8 @@ export async function POST(req: NextRequest) {
             const result = await handleDelegatedTool(
               block.name,
               block.input as Record<string, unknown>,
-              user.walletAddress
+              user.walletAddress,
+              user.walletId
             );
 
             // Surface Stripe 3DS action to the response

@@ -12,6 +12,7 @@ const PRIVY_VERIFICATION_KEY = process.env.PRIVY_VERIFICATION_KEY;
 export interface AuthenticatedUser {
   userId: string;
   walletAddress: string;
+  walletId: string;
 }
 
 /**
@@ -37,11 +38,23 @@ export async function authenticateRequest(
     const embeddedWallet = user.linked_accounts?.find(
       (a: { type: string; wallet_client_type?: string }) =>
         a.type === "wallet" && a.wallet_client_type === "privy"
-    ) as { address: string } | undefined;
+    ) as { address: string; id?: string } | undefined;
 
     if (!embeddedWallet?.address) return null;
 
-    return { userId: user_id, walletAddress: embeddedWallet.address };
+    // Resolve wallet ID for Privy Server SDK calls
+    let walletId = embeddedWallet.id;
+    if (!walletId) {
+      for await (const w of privy.wallets().list({ chain_type: "ethereum" })) {
+        if (w.address.toLowerCase() === embeddedWallet.address.toLowerCase()) {
+          walletId = w.id;
+          break;
+        }
+      }
+    }
+    if (!walletId) return null;
+
+    return { userId: user_id, walletAddress: embeddedWallet.address, walletId };
   } catch {
     return null;
   }

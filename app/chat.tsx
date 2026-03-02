@@ -18,9 +18,9 @@ interface CardSummary {
 }
 
 const SUGGESTIONS = [
-  "Create a new wallet",
-  "List my wallets",
-  "Buy a product with ETH",
+  "Check my balance",
+  "Sign the message: Hello Privy!",
+  "Buy a product",
   "Buy the AI report with my card",
 ];
 
@@ -29,14 +29,19 @@ export default function Chat() {
   const { wallets } = useWallets();
   const { delegateWallet } = useDelegatedActions();
   const embeddedWallet = wallets.find((w) => w.walletClientType === "privy");
+  const delegationAttempted = useRef(false);
 
-  // Auto-delegate wallet on first login
+  // Auto-delegate wallet on first login (once only)
   useEffect(() => {
-    if (embeddedWallet && !(embeddedWallet as unknown as { delegated?: boolean }).delegated) {
-      delegateWallet({ address: embeddedWallet.address, chainType: "ethereum" }).catch(
-        (err) => console.error("Delegation failed:", err)
-      );
-    }
+    if (delegationAttempted.current) return;
+    if (!embeddedWallet) return;
+    const isDelegated = (embeddedWallet as unknown as { delegated?: boolean }).delegated;
+    if (isDelegated) return;
+
+    delegationAttempted.current = true;
+    delegateWallet({ address: embeddedWallet.address, chainType: "ethereum" }).catch(
+      (err) => console.error("Delegation failed:", err)
+    );
   }, [embeddedWallet, delegateWallet]);
 
   const {

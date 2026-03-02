@@ -69,26 +69,17 @@ export const DELEGATED_TOOLS: Tool[] = [
 
 // ──────────────────────────────────────────────
 // Delegated tool handlers
-// walletAddress is injected by the route after JWT verification
+// walletAddress and walletId are injected by the route after JWT verification
 // ──────────────────────────────────────────────
-
-async function findWalletId(walletAddress: string): Promise<string> {
-  for await (const wallet of privy.wallets().list({ chain_type: "ethereum" })) {
-    if (wallet.address.toLowerCase() === walletAddress.toLowerCase()) {
-      return wallet.id;
-    }
-  }
-  throw new Error(`Wallet not found for address ${walletAddress}`);
-}
 
 export async function handleDelegatedTool(
   toolName: string,
   toolInput: Record<string, unknown>,
-  walletAddress: string
+  walletAddress: string,
+  walletId: string
 ): Promise<unknown> {
   switch (toolName) {
     case "get_balance": {
-      const walletId = await findWalletId(walletAddress);
       const result = await privy
         .wallets()
         .balance.get(walletId, { chain: "base_sepolia", asset: "eth" });
@@ -109,8 +100,7 @@ export async function handleDelegatedTool(
         to: string;
         value_eth: number;
       };
-      const walletId = await findWalletId(walletAddress);
-      const weiValue = BigInt(Math.floor(value_eth * 1e18));
+      const weiValue = BigInt(Math.round(value_eth * 1e18));
       const hexValue = "0x" + weiValue.toString(16);
 
       const result = await privy.wallets().ethereum().sendTransaction(
@@ -135,7 +125,6 @@ export async function handleDelegatedTool(
 
     case "sign_message": {
       const { message } = toolInput as { message: string };
-      const walletId = await findWalletId(walletAddress);
       const result = await privy.wallets().ethereum().signMessage(
         walletId,
         { message }
@@ -144,7 +133,6 @@ export async function handleDelegatedTool(
     }
 
     case "buy_product": {
-      const walletId = await findWalletId(walletAddress);
       const payment = PAYMENT_REQUIREMENTS;
       const weiValue = BigInt(payment.price_wei);
       const hexValue = "0x" + weiValue.toString(16);

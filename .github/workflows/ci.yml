@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  PRIVY_APP_ID: clxxxxxxxxxxxxxxxxxtestid
+  PRIVY_APP_SECRET: test-privy-app-secret
+  PRIVY_VERIFICATION_KEY: test-verification-key
+  ANTHROPIC_API_KEY: test-anthropic-key
+  NEXT_PUBLIC_PRIVY_APP_ID: clxxxxxxxxxxxxxxxxxtestid
+  NEXT_PUBLIC_LOGIN3_DOMAIN: https://login3.test.example.com
+  NEXT_PUBLIC_LOGIN3_CLIENT_ID: test-login3-client-id
+  NEXT_PUBLIC_LOGIN3_REDIRECT_URI: http://localhost:3000/auth/callback
+  NEXT_PUBLIC_LOGIN3_SCOPES: openid profile email wallet
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+
+  unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run --coverage
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 14
+
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14

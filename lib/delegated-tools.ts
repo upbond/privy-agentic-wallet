@@ -2,6 +2,10 @@ import type { Tool } from "@anthropic-ai/sdk/resources/messages";
 import type { AuthorizationContext } from "@privy-io/node";
 import { privy } from "./privy";
 import { MERCHANT_ADDRESS, PAYMENT_REQUIREMENTS, verifyPayment, buildProduct } from "./shop";
+import {
+  STRIPE_TOOLS, chargeCustomer, verifyPaymentIntent,
+  getDefaultPaymentMethod, STRIPE_PRODUCT, buildStripeProduct,
+} from "./stripe";
 
 // Base Sepolia CAIP-2
 const BASE_SEPOLIA = "eip155:84532";
@@ -65,6 +69,7 @@ export const DELEGATED_TOOLS: Tool[] = [
       required: [],
     },
   },
+  ...STRIPE_TOOLS,
 ];
 
 // ──────────────────────────────────────────────
@@ -172,6 +177,77 @@ export async function handleDelegatedTool(
         tx_hash: payResult.hash,
         explorer: `https://sepolia.basescan.org/tx/${payResult.hash}`,
         product: buildProduct(payResult.hash, value!),
+      };
+    }
+
+    case "buy_with_stripe": {
+      const { stripe_customer_id } = toolInput as { stripe_customer_id: string };
+
+      const result = await chargeCustomer(
+        stripe_customer_id,
+        STRIPE_PRODUCT.price_cents,
+        `${STRIPE_PRODUCT.name} - Agent Purchase`
+      );
+
+      if (!result.success) {
+        if ("requires_3ds" in result && result.requires_3ds) {
+          return {
+            requires_stripe_action: true,
+            payment_intent_id: result.payment_intent_id,
+            client_secret: result.client_secret,
+            message: result.reason,
+            instruction:
+              "A 3D Secure popup will appear in the chat. Complete the authentication to finish your purchase.",
+          };
+        }
+        return { error: "Payment failed", reason: result.reason };
+      }
+
+      return {
+        success: true,
+        amount_charged: `$${(STRIPE_PRODUCT.price_cents / 100).toFixed(2)} USD`,
+        payment_intent_id: result.payment_intent_id,
+        product: buildStripeProduct(result.payment_intent_id, STRIPE_PRODUCT.price_cents),
+      };
+    }
+
+    case "verify_stripe_payment": {
+      const { payment_intent_id } = toolInput as { payment_intent_id: string };
+
+      const { success, reason } = await verifyPaymentIntent(payment_intent_id);
+      if (!success) {
+        return { error: "Payment verification failed", reason };
+      }
+
+      return {
+        success: true,
+        payment_intent_id,
+        product: buildStripeProduct(payment_intent_id, STRIPE_PRODUCT.price_cents),
+        message: "3D Secure authentication complete. Here is your product!",
+      };
+    }
+
+    case "stripe_check_setup": {
+      const { stripe_customer_id } = toolInput as { stripe_customer_id: string };
+
+      const { valid, card, reason } = await getDefaultPaymentMethod(stripe_customer_id);
+      if (!valid || !card) {
+        return {
+          has_payment_method: false,
+          reason,
+          action_required: "Click the 'Add Card' button in the chat header to set up your payment method.",
+        };
+      }
+
+      return {
+        has_payment_method: true,
+        card: {
+          brand: card.brand,
+          last4: card.last4,
+          exp_month: card.exp_month,
+          exp_year: card.exp_year,
+        },
+        ready_for_autonomous_payment: true,
       };
     }
 

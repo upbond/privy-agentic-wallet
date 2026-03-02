@@ -48,9 +48,18 @@ export function Login3AuthProvider({ children }: { children: ReactNode }) {
   const [email, setEmail] = useState<string | null>(null);
   const [sub, setSub] = useState<string | null>(null);
 
-  // Restore session from sessionStorage on mount
+  // Restore session from sessionStorage or URL params (after server callback redirect)
   useEffect(() => {
-    const stored = sessionStorage.getItem(SESSION_KEYS.ID_TOKEN);
+    // Check if server callback redirected with token in URL
+    const params = new URLSearchParams(window.location.search);
+    const tokenFromUrl = params.get("login3_token");
+    if (tokenFromUrl) {
+      sessionStorage.setItem(SESSION_KEYS.ID_TOKEN, tokenFromUrl);
+      // Clean URL
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+
+    const stored = tokenFromUrl ?? sessionStorage.getItem(SESSION_KEYS.ID_TOKEN);
     if (stored && !isTokenExpired(stored)) {
       const claims = parseIdToken(stored);
       setIdToken(stored);
@@ -63,8 +72,9 @@ export function Login3AuthProvider({ children }: { children: ReactNode }) {
 
   const startLogin = useCallback(async () => {
     const { url, codeVerifier, state } = await buildAuthorizationUrl();
-    sessionStorage.setItem(SESSION_KEYS.CODE_VERIFIER, codeVerifier);
-    sessionStorage.setItem(SESSION_KEYS.STATE, state);
+    // Store PKCE artifacts in cookies so server-side callback can read them
+    document.cookie = `login3_code_verifier=${codeVerifier}; path=/; max-age=600; SameSite=Lax`;
+    document.cookie = `login3_state=${state}; path=/; max-age=600; SameSite=Lax`;
     window.location.href = url;
   }, []);
 
@@ -76,16 +86,6 @@ export function Login3AuthProvider({ children }: { children: ReactNode }) {
     sessionStorage.removeItem(SESSION_KEYS.ID_TOKEN);
     sessionStorage.removeItem(SESSION_KEYS.CODE_VERIFIER);
     sessionStorage.removeItem(SESSION_KEYS.STATE);
-  }, []);
-
-  // Called from callback page after token exchange
-  const setSession = useCallback((token: string) => {
-    const claims = parseIdToken(token);
-    setIdToken(token);
-    setWalletAddress(claims.wallet_address ?? null);
-    setEmail(claims.email ?? null);
-    setSub(claims.sub);
-    sessionStorage.setItem(SESSION_KEYS.ID_TOKEN, token);
   }, []);
 
   return (
@@ -104,16 +104,4 @@ export function Login3AuthProvider({ children }: { children: ReactNode }) {
       {children}
     </Login3AuthContext.Provider>
   );
-}
-
-// Exported for use in callback page
-export function useSetLogin3Session() {
-  const [, setIdToken] = useState<string | null>(null);
-
-  const setSession = useCallback((token: string) => {
-    sessionStorage.setItem(SESSION_KEYS.ID_TOKEN, token);
-    setIdToken(token);
-  }, []);
-
-  return setSession;
 }

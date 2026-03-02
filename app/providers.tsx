@@ -1,7 +1,7 @@
 "use client";
 
 import { PrivyProvider, useSubscribeToJwtAuthWithFlag } from "@privy-io/react-auth";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Login3AuthProvider, useLogin3Auth } from "@/contexts/Login3AuthContext";
 
 /**
@@ -11,13 +11,15 @@ import { Login3AuthProvider, useLogin3Auth } from "@/contexts/Login3AuthContext"
 function Login3SyncBridge() {
   const { isAuthenticated, isLoading, idToken } = useLogin3Auth();
 
+  const getExternalJwt = useCallback(async () => {
+    if (isAuthenticated && idToken) return idToken;
+    return undefined;
+  }, [isAuthenticated, idToken]);
+
   useSubscribeToJwtAuthWithFlag({
     isAuthenticated,
     isLoading,
-    getExternalJwt: async () => {
-      if (isAuthenticated && idToken) return idToken;
-      return undefined;
-    },
+    getExternalJwt,
   });
 
   return null;

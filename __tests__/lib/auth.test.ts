@@ -1,32 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock @privy-io/node
-vi.mock("@privy-io/node", () => ({
-  verifyAccessToken: vi.fn(),
+// Mock @/lib/privy
+const mockVerifyAccessToken = vi.fn();
+const mockWalletsList = vi.fn();
+const mockWalletsCreate = vi.fn();
+
+vi.mock("@/lib/privy", () => ({
+  privy: {
+    utils: () => ({
+      auth: () => ({
+        verifyAccessToken: mockVerifyAccessToken,
+      }),
+    }),
+    wallets: () => ({
+      list: mockWalletsList,
+      create: mockWalletsCreate,
+    }),
+  },
 }));
 
-// Mock @/lib/privy
-vi.mock("@/lib/privy", () => {
-  const mockUsersGet = vi.fn();
-  const mockWalletsList = vi.fn();
-  return {
-    privy: {
-      users: () => ({ _get: mockUsersGet }),
-      wallets: () => ({
-        list: mockWalletsList,
-      }),
-    },
-    __mockUsersGet: mockUsersGet,
-    __mockWalletsList: mockWalletsList,
-  };
-});
-
 import { authenticateRequest } from "@/lib/auth";
-import { verifyAccessToken } from "@privy-io/node";
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const { __mockUsersGet: mockUsersGet, __mockWalletsList: mockWalletsList } = await import("@/lib/privy") as any;
-
-const mockVerify = vi.mocked(verifyAccessToken);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -44,34 +37,19 @@ describe("authenticateRequest", () => {
   });
 
   it("returns null for invalid JWT", async () => {
-    mockVerify.mockRejectedValueOnce(new Error("Invalid token"));
+    mockVerifyAccessToken.mockRejectedValueOnce(new Error("Invalid token"));
     const result = await authenticateRequest("Bearer invalid-token");
     expect(result).toBeNull();
   });
 
-  it("returns null for user without embedded wallet", async () => {
-    mockVerify.mockResolvedValueOnce({ user_id: "did:privy:user1" } as never);
-    mockUsersGet.mockResolvedValueOnce({
-      linked_accounts: [
-        { type: "email", address: "user@test.com" },
-      ],
-    });
+  it("returns user with existing server wallet from wallets().list()", async () => {
+    mockVerifyAccessToken.mockResolvedValueOnce({ user_id: "did:privy:user1" });
 
-    const result = await authenticateRequest("Bearer valid-token");
-    expect(result).toBeNull();
-  });
-
-  it("returns auth user with wallet ID from linked_accounts", async () => {
-    mockVerify.mockResolvedValueOnce({ user_id: "did:privy:user1" } as never);
-    mockUsersGet.mockResolvedValueOnce({
-      linked_accounts: [
-        {
-          type: "wallet",
-          wallet_client_type: "privy",
-          address: "0xAbC123",
-          id: "wallet-id-1",
-        },
-      ],
+    // wallets().list() returns async iterable with one wallet
+    mockWalletsList.mockReturnValueOnce({
+      [Symbol.asyncIterator]: async function* () {
+        yield { id: "wallet-id-1", address: "0xAbC123" };
+      },
     });
 
     const result = await authenticateRequest("Bearer valid-token");
@@ -79,35 +57,39 @@ describe("authenticateRequest", () => {
       userId: "did:privy:user1",
       walletAddress: "0xAbC123",
       walletId: "wallet-id-1",
+      accessToken: "valid-token",
+    });
+    expect(mockWalletsList).toHaveBeenCalledWith({
+      user_id: "did:privy:user1",
+      chain_type: "ethereum",
     });
   });
 
-  it("resolves wallet ID via wallets().list() fallback", async () => {
-    mockVerify.mockResolvedValueOnce({ user_id: "did:privy:user2" } as never);
-    mockUsersGet.mockResolvedValueOnce({
-      linked_accounts: [
-        {
-          type: "wallet",
-          wallet_client_type: "privy",
-          address: "0xDef456",
-          // no id field
-        },
-      ],
-    });
+  it("creates server wallet when none exists", async () => {
+    mockVerifyAccessToken.mockResolvedValueOnce({ user_id: "did:privy:user2" });
 
-    // Async iterable mock for wallets().list()
+    // wallets().list() returns empty async iterable
     mockWalletsList.mockReturnValueOnce({
       [Symbol.asyncIterator]: async function* () {
-        yield { address: "0xOther", id: "other-id" };
-        yield { address: "0xdef456", id: "wallet-id-2" }; // lowercase match
+        // no wallets
       },
     });
 
-    const result = await authenticateRequest("Bearer valid-token");
+    mockWalletsCreate.mockResolvedValueOnce({
+      id: "new-wallet-id",
+      address: "0xNewWallet",
+    });
+
+    const result = await authenticateRequest("Bearer new-user-token");
     expect(result).toEqual({
       userId: "did:privy:user2",
-      walletAddress: "0xDef456",
-      walletId: "wallet-id-2",
+      walletAddress: "0xNewWallet",
+      walletId: "new-wallet-id",
+      accessToken: "new-user-token",
+    });
+    expect(mockWalletsCreate).toHaveBeenCalledWith({
+      chain_type: "ethereum",
+      owner: { user_id: "did:privy:user2" },
     });
   });
 });

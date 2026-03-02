@@ -48,6 +48,7 @@ const mockBuildStripeProduct = vi.mocked(buildStripeProduct);
 
 const WALLET_ADDRESS = "0xUserWallet123";
 const WALLET_ID = "user-wallet-id";
+const AUTH_CONTEXT = { user_jwts: ["test-jwt"] };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -70,7 +71,8 @@ describe("handleDelegatedTool", () => {
       "get_balance",
       {},
       WALLET_ADDRESS,
-      WALLET_ID
+      WALLET_ID,
+      AUTH_CONTEXT
     )) as { wallet_address: string; asset: string };
 
     expect(result.wallet_address).toBe(WALLET_ADDRESS);
@@ -88,7 +90,8 @@ describe("handleDelegatedTool", () => {
       "send_eth",
       { to: "0xRecipient", value_eth: 0.0003 },
       WALLET_ADDRESS,
-      WALLET_ID
+      WALLET_ID,
+      AUTH_CONTEXT
     )) as { from: string; hash: string };
 
     expect(result.from).toBe(WALLET_ADDRESS);
@@ -106,13 +109,15 @@ describe("handleDelegatedTool", () => {
       "sign_message",
       { message: "Hello Privy!" },
       WALLET_ADDRESS,
-      WALLET_ID
+      WALLET_ID,
+      AUTH_CONTEXT
     )) as { wallet_address: string; signature: string };
 
     expect(result.wallet_address).toBe(WALLET_ADDRESS);
     expect(result.signature).toBe("0xdelegsig");
     expect(mockSignMessage).toHaveBeenCalledWith(WALLET_ID, {
       message: "Hello Privy!",
+      authorization_context: AUTH_CONTEXT,
     });
   });
 
@@ -127,7 +132,8 @@ describe("handleDelegatedTool", () => {
       "buy_product",
       {},
       WALLET_ADDRESS,
-      WALLET_ID
+      WALLET_ID,
+      AUTH_CONTEXT
     )) as { success: boolean; from: string; product: { product: string } };
 
     expect(result.success).toBe(true);
@@ -145,7 +151,8 @@ describe("handleDelegatedTool", () => {
       "buy_with_stripe",
       { stripe_customer_id: "cus_test" },
       WALLET_ADDRESS,
-      WALLET_ID
+      WALLET_ID,
+      AUTH_CONTEXT
     )) as { success: boolean; product: { product: string } };
 
     expect(result.success).toBe(true);
@@ -167,7 +174,8 @@ describe("handleDelegatedTool", () => {
       "buy_with_stripe",
       { stripe_customer_id: "cus_test" },
       WALLET_ADDRESS,
-      WALLET_ID
+      WALLET_ID,
+      AUTH_CONTEXT
     )) as { requires_stripe_action: boolean; payment_intent_id: string; client_secret: string };
 
     expect(result.requires_stripe_action).toBe(true);
@@ -182,7 +190,8 @@ describe("handleDelegatedTool", () => {
       "verify_stripe_payment",
       { payment_intent_id: "pi_verified" },
       WALLET_ADDRESS,
-      WALLET_ID
+      WALLET_ID,
+      AUTH_CONTEXT
     )) as { success: boolean; product: { product: string } };
 
     expect(result.success).toBe(true);
@@ -202,7 +211,8 @@ describe("handleDelegatedTool", () => {
       "stripe_check_setup",
       { stripe_customer_id: "cus_test" },
       WALLET_ADDRESS,
-      WALLET_ID
+      WALLET_ID,
+      AUTH_CONTEXT
     )) as { has_payment_method: boolean; card: { brand: string; last4: string }; ready_for_autonomous_payment: boolean };
 
     expect(result.has_payment_method).toBe(true);
@@ -214,7 +224,7 @@ describe("handleDelegatedTool", () => {
 
   it("throws for unknown tool", async () => {
     await expect(
-      handleDelegatedTool("unknown_tool", {}, WALLET_ADDRESS, WALLET_ID)
+      handleDelegatedTool("unknown_tool", {}, WALLET_ADDRESS, WALLET_ID, AUTH_CONTEXT)
     ).rejects.toThrow("Unknown tool: unknown_tool");
   });
 });

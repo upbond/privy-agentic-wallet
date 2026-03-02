@@ -63,6 +63,7 @@ describe("POST /api/agent", () => {
       userId: "user-1",
       walletAddress: "0xWallet",
       walletId: "wallet-id",
+      accessToken: "valid-token",
     });
 
     mockCreate.mockResolvedValueOnce({
@@ -87,6 +88,7 @@ describe("POST /api/agent", () => {
       userId: "user-1",
       walletAddress: "0xWallet",
       walletId: "wallet-id",
+      accessToken: "valid-token",
     });
 
     // First Anthropic call returns tool_use
@@ -129,7 +131,8 @@ describe("POST /api/agent", () => {
       "get_balance",
       {},
       "0xWallet",
-      "wallet-id"
+      "wallet-id",
+      { user_jwts: ["valid-token"] }
     );
     expect(mockCreate).toHaveBeenCalledTimes(2);
   });
@@ -139,6 +142,7 @@ describe("POST /api/agent", () => {
       userId: "user-1",
       walletAddress: "0xWallet",
       walletId: "wallet-id",
+      accessToken: "valid-token",
     });
 
     mockCreate.mockResolvedValueOnce({
@@ -178,6 +182,7 @@ describe("POST /api/agent", () => {
       userId: "user-1",
       walletAddress: "0xWallet",
       walletId: "wallet-id",
+      accessToken: "valid-token",
     });
 
     // Return tool_use for every call (11 times)
@@ -208,6 +213,7 @@ describe("POST /api/agent", () => {
       userId: "user-1",
       walletAddress: "0xWallet",
       walletId: "wallet-id",
+      accessToken: "valid-token",
     });
 
     mockCreate.mockRejectedValueOnce(new Error("API rate limit"));

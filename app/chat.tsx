@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, FormEvent } from "react";
-import { usePrivy } from "@privy-io/react-auth";
+import { usePrivy, useWallets } from "@privy-io/react-auth";
 
 interface Message {
   role: "user" | "assistant";
@@ -15,10 +15,31 @@ const SUGGESTIONS = [
 ];
 
 export default function Chat() {
-  const { ready, authenticated, login, logout, user } = usePrivy();
-  const embeddedWallet = user?.linkedAccounts?.find(
-    (a) => a.type === "wallet" && a.walletClientType === "privy"
-  );
+  const { ready, authenticated, login, logout, fundWallet } = usePrivy();
+  const { wallets } = useWallets();
+  const embeddedWallet = wallets.find((w) => w.walletClientType === "privy");
+
+  const [balance, setBalance] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!embeddedWallet?.address) return;
+    fetch("https://sepolia.base.org", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "eth_getBalance",
+        params: [embeddedWallet.address, "latest"],
+      }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        const eth = Number(BigInt(data.result)) / 1e18;
+        setBalance(eth.toFixed(4));
+      })
+      .catch(() => setBalance(null));
+  }, [embeddedWallet?.address]);
 
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -120,26 +141,42 @@ export default function Chat() {
       {/* Header */}
       <header className="border-b border-gray-800 px-6 py-4">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-sm font-bold">
+          <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-sm font-bold shrink-0">
             P
           </div>
-          <div>
+          <div className="min-w-0">
             <h1 className="font-semibold text-white">Privy Agentic Wallet</h1>
-            <p className="text-xs text-gray-400 font-mono">
-              {embeddedWallet && "address" in embeddedWallet
-                ? `${embeddedWallet.address.slice(0, 6)}...${embeddedWallet.address.slice(-4)}`
-                : "Base Sepolia Testnet"}
-            </p>
+            {embeddedWallet ? (
+              <p className="text-xs text-gray-400 font-mono">
+                {embeddedWallet.address.slice(0, 6)}...{embeddedWallet.address.slice(-4)}
+                <span className="ml-2 text-gray-500">·</span>
+                <span className="ml-2 text-gray-300">
+                  {balance !== null ? `${balance} ETH` : "—"}
+                </span>
+              </p>
+            ) : (
+              <p className="text-xs text-gray-400">Base Sepolia Testnet</p>
+            )}
           </div>
-          <span className="ml-auto text-xs bg-green-900/50 text-green-400 px-2 py-1 rounded-full border border-green-800">
-            Testnet
-          </span>
-          <button
-            onClick={logout}
-            className="text-xs text-gray-400 hover:text-white transition-colors"
-          >
-            Sign Out
-          </button>
+          <div className="ml-auto flex items-center gap-2 shrink-0">
+            <span className="text-xs bg-green-900/50 text-green-400 px-2 py-1 rounded-full border border-green-800">
+              Testnet
+            </span>
+            {embeddedWallet && (
+              <button
+                onClick={() => fundWallet(embeddedWallet.address, { chain: { id: 84532, name: "Base Sepolia", rpcUrls: { default: { http: ["https://sepolia.base.org"] } }, nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 } } })}
+                className="text-xs bg-purple-900/50 text-purple-300 px-2 py-1 rounded-full border border-purple-700 hover:bg-purple-800/50 transition-colors"
+              >
+                Fund
+              </button>
+            )}
+            <button
+              onClick={logout}
+              className="text-xs text-gray-400 hover:text-white transition-colors"
+            >
+              Sign Out
+            </button>
+          </div>
         </div>
       </header>
 

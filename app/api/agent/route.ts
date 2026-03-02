@@ -1,8 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
-import { TOOLS, handleTool } from "@/lib/tools";
+import { DELEGATED_TOOLS, handleDelegatedTool } from "@/lib/delegated-tools";
+import { authenticateRequest } from "@/lib/auth";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_AUTH_TOKEN ?? process.env.ANTHROPIC_API_KEY!,
+  baseURL: process.env.ANTHROPIC_BASE_URL ?? undefined,
+});
 
 function buildSystemPrompt(stripeCustomerId?: string): string {
   const stripeSection = stripeCustomerId
@@ -11,13 +15,14 @@ When they ask to buy something with a card, Stripe, or credit card, use this cus
     : `The user has NOT set up a Stripe payment method yet.
 If they ask to pay with a card or use Stripe, inform them they need to click the "Add Card" button in the chat header to set up their card first.`;
 
-  return `You are an agentic wallet assistant powered by Privy server wallets on Base Sepolia testnet.
+  return `You are an agentic wallet assistant powered by Privy delegated wallets on Base Sepolia testnet.
 
-You can help users:
-- Create new wallets with spending-limit policies
-- List existing wallets
-- Check ETH balances
-- Send ETH (max 0.001 ETH per transaction, enforced by on-chain policy)
+The user has already authenticated via Login 3.0 and delegated their embedded wallet to you.
+You operate on their behalf using their own wallet — not an app-owned server wallet.
+
+You can help the user:
+- Check their ETH balance
+- Send ETH (max 0.001 ETH per transaction, enforced by policy)
 - Sign messages
 - Buy products using ETH on Base Sepolia (buy_product tool, price: 0.00001 ETH)
 - Buy a premium AI market report using Stripe card payment (buy_with_stripe tool, price: $1.00 USD)
@@ -32,6 +37,17 @@ For Stripe payments, always check if the customer has a saved card using stripe_
 }
 
 export async function POST(req: NextRequest) {
+  // JWT authentication
+  const authHeader = req.headers.get("authorization");
+  const user = await authenticateRequest(authHeader);
+
+  if (!user) {
+    return NextResponse.json(
+      { error: "Unauthorized. Please sign in with Login 3.0." },
+      { status: 401 }
+    );
+  }
+
   try {
     const { messages, stripe_customer_id } = (await req.json()) as {
       messages: Anthropic.MessageParam[];
@@ -49,7 +65,7 @@ export async function POST(req: NextRequest) {
       model: "claude-haiku-4-5",
       max_tokens: 4096,
       system: buildSystemPrompt(stripe_customer_id),
-      tools: TOOLS,
+      tools: DELEGATED_TOOLS,
       messages: agentMessages,
     });
 
@@ -64,9 +80,10 @@ export async function POST(req: NextRequest) {
       const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
         toolUseBlocks.map(async (block) => {
           try {
-            const result = await handleTool(
+            const result = await handleDelegatedTool(
               block.name,
-              block.input as Record<string, unknown>
+              block.input as Record<string, unknown>,
+              user.walletAddress
             );
 
             // Surface Stripe 3DS action to the response
@@ -105,7 +122,7 @@ export async function POST(req: NextRequest) {
         model: "claude-haiku-4-5",
         max_tokens: 4096,
         system: buildSystemPrompt(stripe_customer_id),
-        tools: TOOLS,
+        tools: DELEGATED_TOOLS,
         messages: agentMessages,
       });
     }

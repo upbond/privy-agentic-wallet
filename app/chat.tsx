@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { usePrivy, useWallets } from "@privy-io/react-auth";
+import { usePrivy, useWallets, useDelegatedActions } from "@privy-io/react-auth";
 import { loadStripe } from "@stripe/stripe-js";
 import { useLogin3Auth } from "@/contexts/Login3AuthContext";
 
@@ -25,9 +25,19 @@ const SUGGESTIONS = [
 ];
 
 export default function Chat() {
-  const { ready, authenticated: privyAuthenticated, logout: privyLogout, user } = usePrivy();
+  const { ready, authenticated: privyAuthenticated, logout: privyLogout, user, getAccessToken } = usePrivy();
   const { wallets } = useWallets();
+  const { delegateWallet } = useDelegatedActions();
   const embeddedWallet = wallets.find((w) => w.walletClientType === "privy");
+
+  // Auto-delegate wallet on first login
+  useEffect(() => {
+    if (embeddedWallet && !(embeddedWallet as unknown as { delegated?: boolean }).delegated) {
+      delegateWallet({ address: embeddedWallet.address, chainType: "ethereum" }).catch(
+        (err) => console.error("Delegation failed:", err)
+      );
+    }
+  }, [embeddedWallet, delegateWallet]);
 
   const {
     isAuthenticated: login3Authenticated,
@@ -195,9 +205,13 @@ export default function Chat() {
         .slice(1)
         .map((m) => ({ role: m.role, content: m.content }));
 
+      const accessToken = await getAccessToken();
       const res = await fetch("/api/agent", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
         body: JSON.stringify({
           messages: apiMessages,
           stripe_customer_id: stripeCustomerId ?? undefined,

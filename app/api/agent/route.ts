@@ -87,7 +87,8 @@ export async function POST(req: NextRequest) {
               block.name,
               block.input as Record<string, unknown>,
               user.walletAddress,
-              user.walletId
+              user.walletId,
+              { user_jwts: [user.accessToken] }
             );
 
             // Surface Stripe 3DS action to the response

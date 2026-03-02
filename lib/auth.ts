@@ -1,23 +1,23 @@
 /**
  * Server-side Privy JWT verification for API routes.
  * Extracts userId and walletAddress from a Privy access token.
+ *
+ * Uses server-side user wallets (not embedded wallets) for delegated operations.
+ * If the user doesn't have a server wallet yet, one is created automatically.
  */
 
-import { verifyAccessToken } from "@privy-io/node";
 import { privy } from "./privy";
-
-const PRIVY_APP_ID = process.env.PRIVY_APP_ID!;
-const PRIVY_VERIFICATION_KEY = process.env.PRIVY_VERIFICATION_KEY;
 
 export interface AuthenticatedUser {
   userId: string;
   walletAddress: string;
   walletId: string;
+  accessToken: string;
 }
 
 /**
  * Verify Privy access token from Authorization header.
- * Returns userId and embedded wallet address, or null if invalid.
+ * Returns userId and server wallet info, or null if invalid.
  */
 export async function authenticateRequest(
   authHeader: string | null
@@ -27,35 +27,36 @@ export async function authenticateRequest(
   const accessToken = authHeader.slice(7);
 
   try {
-    const { user_id } = await verifyAccessToken({
-      access_token: accessToken,
-      app_id: PRIVY_APP_ID,
-      verification_key: PRIVY_VERIFICATION_KEY ?? `https://auth.privy.io/api/v1/apps/${PRIVY_APP_ID}/.well-known/jwks.json`,
-    });
+    const { user_id } = await privy.utils().auth().verifyAccessToken(accessToken);
 
-    // Look up user's embedded wallet
-    const user = await privy.users()._get(user_id);
-    const embeddedWallet = user.linked_accounts?.find(
-      (a: { type: string; wallet_client_type?: string }) =>
-        a.type === "wallet" && a.wallet_client_type === "privy"
-    ) as { address: string; id?: string } | undefined;
+    // Find or create a server-side user wallet
+    let wallet: { id: string; address: string } | null = null;
 
-    if (!embeddedWallet?.address) return null;
-
-    // Resolve wallet ID for Privy Server SDK calls
-    let walletId = embeddedWallet.id;
-    if (!walletId) {
-      for await (const w of privy.wallets().list({ chain_type: "ethereum" })) {
-        if (w.address.toLowerCase() === embeddedWallet.address.toLowerCase()) {
-          walletId = w.id;
-          break;
-        }
-      }
+    // Check if user already has a server wallet
+    for await (const w of privy.wallets().list({ user_id, chain_type: "ethereum" })) {
+      wallet = { id: w.id, address: w.address };
+      break;
     }
-    if (!walletId) return null;
 
-    return { userId: user_id, walletAddress: embeddedWallet.address, walletId };
-  } catch {
+    // Create a server wallet for the user if none exists
+    if (!wallet) {
+      console.log("[auth] Creating server wallet for user:", user_id);
+      const created = await privy.wallets().create({
+        chain_type: "ethereum",
+        owner: { user_id },
+      });
+      wallet = { id: created.id, address: created.address };
+      console.log("[auth] Server wallet created:", wallet);
+    }
+
+    return {
+      userId: user_id,
+      walletAddress: wallet.address,
+      walletId: wallet.id,
+      accessToken,
+    };
+  } catch (err) {
+    console.error("[auth] Authentication failed:", err);
     return null;
   }
 }

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { usePrivy, useWallets, useDelegatedActions } from "@privy-io/react-auth";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { usePrivy } from "@privy-io/react-auth";
 import { useLogin3Auth } from "@/contexts/Login3AuthContext";
 
 interface Message {
@@ -17,23 +17,6 @@ const SUGGESTIONS = [
 
 export default function Chat() {
   const { ready, authenticated: privyAuthenticated, logout: privyLogout, getAccessToken } = usePrivy();
-  const { wallets } = useWallets();
-  const { delegateWallet } = useDelegatedActions();
-  const embeddedWallet = wallets.find((w) => w.walletClientType === "privy");
-  const delegationAttempted = useRef(false);
-
-  // Auto-delegate wallet on first login (once only)
-  useEffect(() => {
-    if (delegationAttempted.current) return;
-    if (!embeddedWallet) return;
-    const isDelegated = (embeddedWallet as unknown as { delegated?: boolean }).delegated;
-    if (isDelegated) return;
-
-    delegationAttempted.current = true;
-    delegateWallet({ address: embeddedWallet.address, chainType: "ethereum" }).catch(
-      (err) => console.error("Delegation failed:", err)
-    );
-  }, [embeddedWallet, delegateWallet]);
 
   const {
     isAuthenticated: login3Authenticated,
@@ -43,15 +26,44 @@ export default function Chat() {
     clearSession,
   } = useLogin3Auth();
 
-  // User is "authenticated" if Login 3.0 session exists
-  // Privy auth happens automatically via SyncBridge
   const isAuthenticated = login3Authenticated;
   const isReady = ready && !login3Loading;
 
+  // Server wallet info (fetched from /api/wallet after Privy auth is ready)
+  const [serverWallet, setServerWallet] = useState<{ walletAddress: string; walletId: string } | null>(null);
   const [balance, setBalance] = useState<string | null>(null);
+  const walletFetched = useRef(false);
 
+  const fetchServerWallet = useCallback(async () => {
+    if (walletFetched.current) return;
+    const token = await getAccessToken();
+    if (!token) return;
+    walletFetched.current = true;
+
+    try {
+      const res = await fetch("/api/wallet", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setServerWallet(data);
+      }
+    } catch {
+      // Will retry on next render
+      walletFetched.current = false;
+    }
+  }, [getAccessToken]);
+
+  // Fetch server wallet once Privy is authenticated
   useEffect(() => {
-    const address = embeddedWallet?.address;
+    if (privyAuthenticated && !serverWallet) {
+      fetchServerWallet();
+    }
+  }, [privyAuthenticated, serverWallet, fetchServerWallet]);
+
+  // Fetch balance for server wallet
+  useEffect(() => {
+    const address = serverWallet?.walletAddress;
     if (!address) return;
     fetch("https://sepolia.base.org", {
       method: "POST",
@@ -69,7 +81,7 @@ export default function Chat() {
         setBalance(eth.toFixed(4));
       })
       .catch(() => setBalance(null));
-  }, [embeddedWallet?.address]);
+  }, [serverWallet?.walletAddress]);
 
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -140,6 +152,8 @@ export default function Chat() {
 
   async function handleSignOut() {
     clearSession();
+    setServerWallet(null);
+    walletFetched.current = false;
     if (privyAuthenticated) {
       await privyLogout();
     }
@@ -177,6 +191,8 @@ export default function Chat() {
     );
   }
 
+  const displayAddress = serverWallet?.walletAddress;
+
   return (
     <div className="flex flex-col h-screen max-w-3xl mx-auto">
       {/* Header */}
@@ -187,9 +203,9 @@ export default function Chat() {
           </div>
           <div className="min-w-0">
             <h1 className="font-semibold text-white">Privy Agentic Wallet</h1>
-            {embeddedWallet ? (
+            {displayAddress ? (
               <p className="text-xs text-gray-400 font-mono">
-                {embeddedWallet.address.slice(0, 6)}...{embeddedWallet.address.slice(-4)}
+                {displayAddress.slice(0, 6)}...{displayAddress.slice(-4)}
                 <span className="ml-2 text-gray-500">·</span>
                 <span className="ml-2 text-gray-300">
                   {balance !== null ? `${balance} ETH` : "—"}
@@ -199,7 +215,7 @@ export default function Chat() {
               <p className="text-xs text-gray-400 font-mono">
                 Login 3.0: {login3WalletAddress.slice(0, 6)}...{login3WalletAddress.slice(-4)}
                 <span className="ml-2 text-gray-500">·</span>
-                <span className="ml-2 text-yellow-400">Privy syncing...</span>
+                <span className="ml-2 text-yellow-400">Setting up wallet...</span>
               </p>
             ) : (
               <p className="text-xs text-gray-400">Base Sepolia Testnet</p>

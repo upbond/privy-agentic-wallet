@@ -1,4 +1,5 @@
 import type { Tool } from "@anthropic-ai/sdk/resources/messages";
+import type { AuthorizationContext } from "@privy-io/node";
 import { privy } from "./privy";
 import { MERCHANT_ADDRESS, PAYMENT_REQUIREMENTS, verifyPayment, buildProduct } from "./shop";
 
@@ -7,7 +8,6 @@ const BASE_SEPOLIA = "eip155:84532";
 
 // ──────────────────────────────────────────────
 // Delegated wallet tool schemas
-// No wallet_id needed — the user's embedded wallet is used automatically
 // ──────────────────────────────────────────────
 
 export const DELEGATED_TOOLS: Tool[] = [
@@ -69,14 +69,15 @@ export const DELEGATED_TOOLS: Tool[] = [
 
 // ──────────────────────────────────────────────
 // Delegated tool handlers
-// walletAddress and walletId are injected by the route after JWT verification
+// walletAddress, walletId, and authContext are injected by the route after JWT verification
 // ──────────────────────────────────────────────
 
 export async function handleDelegatedTool(
   toolName: string,
   toolInput: Record<string, unknown>,
   walletAddress: string,
-  walletId: string
+  walletId: string,
+  authContext: AuthorizationContext
 ): Promise<unknown> {
   switch (toolName) {
     case "get_balance": {
@@ -114,6 +115,7 @@ export async function handleDelegatedTool(
               chain_id: 84532,
             },
           },
+          authorization_context: authContext,
         }
       );
       return {
@@ -127,7 +129,7 @@ export async function handleDelegatedTool(
       const { message } = toolInput as { message: string };
       const result = await privy.wallets().ethereum().signMessage(
         walletId,
-        { message }
+        { message, authorization_context: authContext }
       );
       return { wallet_address: walletAddress, signature: result.signature };
     }
@@ -148,6 +150,7 @@ export async function handleDelegatedTool(
               chain_id: 84532,
             },
           },
+          authorization_context: authContext,
         }
       );
 

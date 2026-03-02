@@ -13,7 +13,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 // Merchant's receiving wallet (demo — can be any address)
-const MERCHANT_ADDRESS = "0x2F74235FB971f207A1713B358A0E96Be6eBea3a2";
+const MERCHANT_ADDRESS = "0x557925d2C45793a678F94D4B638251E537Fa6dB8";
 const PRICE_WEI = BigInt("10000000000000"); // 0.00001 ETH
 const BASE_SEPOLIA_RPC = "https://sepolia.base.org";
 

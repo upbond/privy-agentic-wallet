@@ -12,9 +12,12 @@
     "@anthropic-ai/sdk": "latest",
     "@privy-io/node": "latest",
     "@privy-io/react-auth": "^3.15.0",
+    "@stripe/agent-toolkit": "^0.9.0",
+    "@stripe/stripe-js": "^8.8.0",
     "next": "^15.2.3",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "stripe": "^20.4.0"
   },
   "devDependencies": {
     "@types/node": "^20",

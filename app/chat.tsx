@@ -2,39 +2,42 @@
 
 import { useState, useRef, useEffect } from "react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
-import { loadStripe } from "@stripe/stripe-js";
+import { useLogin3Auth } from "@/contexts/Login3AuthContext";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
 }
 
-interface CardSummary {
-  brand: string;
-  last4: string;
-  exp_month: number;
-  exp_year: number;
-}
-
 const SUGGESTIONS = [
   "Create a new wallet",
   "List my wallets",
-  "Buy a product with ETH",
-  "Buy the AI report with my card",
+  "Sign the message: Hello Privy!",
 ];
 
 export default function Chat() {
-  const { ready, authenticated, login, logout, user } = usePrivy();
+  const { ready, authenticated: privyAuthenticated, logout: privyLogout } = usePrivy();
   const { wallets } = useWallets();
   const embeddedWallet = wallets.find((w) => w.walletClientType === "privy");
 
-  const [balance, setBalance] = useState<string | null>(null);
-  const [stripeCustomerId, setStripeCustomerId] = useState<string | null>(null);
-  const [stripeCardInfo, setStripeCardInfo] = useState<CardSummary | null>(null);
+  const {
+    isAuthenticated: login3Authenticated,
+    isLoading: login3Loading,
+    walletAddress: login3WalletAddress,
+    startLogin,
+    clearSession,
+  } = useLogin3Auth();
 
-  // ── Fetch ETH balance ──────────────────────────────────────────────
+  // User is "authenticated" if Login 3.0 session exists
+  // Privy auth happens automatically via SyncBridge
+  const isAuthenticated = login3Authenticated;
+  const isReady = ready && !login3Loading;
+
+  const [balance, setBalance] = useState<string | null>(null);
+
   useEffect(() => {
-    if (!embeddedWallet?.address) return;
+    const address = embeddedWallet?.address;
+    if (!address) return;
     fetch("https://sepolia.base.org", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -42,7 +45,7 @@ export default function Chat() {
         jsonrpc: "2.0",
         id: 1,
         method: "eth_getBalance",
-        params: [embeddedWallet.address, "latest"],
+        params: [address, "latest"],
       }),
     })
       .then((r) => r.json())
@@ -53,109 +56,11 @@ export default function Chat() {
       .catch(() => setBalance(null));
   }, [embeddedWallet?.address]);
 
-  // ── Stripe customer ID from localStorage + URL redirect ───────────
-  async function fetchCardInfo(customerId: string) {
-    try {
-      const res = await fetch(`/api/stripe/payment-status?customer_id=${customerId}`);
-      const data = await res.json();
-      if (data.has_payment_method) {
-        setStripeCardInfo(data.card_summary);
-      } else {
-        setStripeCardInfo(null);
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const setupResult = params.get("stripe_setup");
-    const customerId = params.get("customer_id");
-
-    if (setupResult === "success" && customerId) {
-      localStorage.setItem("stripe_customer_id", customerId);
-      setStripeCustomerId(customerId);
-      window.history.replaceState({}, "", "/");
-      fetchCardInfo(customerId);
-    } else {
-      const saved = localStorage.getItem("stripe_customer_id");
-      if (saved) {
-        setStripeCustomerId(saved);
-        fetchCardInfo(saved);
-      }
-    }
-  }, []);
-
-  // ── Add card via Stripe Checkout (setup mode) ─────────────────────
-  async function handleAddCard() {
-    if (!authenticated || !user?.id) return;
-    try {
-      const res = await fetch("/api/stripe/setup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: user.id }),
-      });
-      const data = await res.json();
-      if (data.url) {
-        window.location.href = data.url;
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  // ── 3DS popup via Stripe.js ────────────────────────────────────────
-  async function handle3DS(clientSecret: string, paymentIntentId: string) {
-    const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
-    if (!publishableKey) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content:
-            "3D Secure authentication is required but NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is not configured. Please add your card without 3DS.",
-        },
-      ]);
-      return;
-    }
-
-    const stripeJs = await loadStripe(publishableKey);
-    if (!stripeJs) return;
-
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "assistant",
-        content: "Please complete 3D Secure authentication in the popup that appears...",
-      },
-    ]);
-
-    const { error } = await stripeJs.handleCardAction(clientSecret);
-
-    if (error) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: `3D Secure authentication failed: ${error.message}`,
-        },
-      ]);
-      return;
-    }
-
-    // Authentication succeeded — ask agent to verify and deliver product
-    await send(
-      `3D Secure authentication complete. Please verify payment ${paymentIntentId} and deliver my product.`
-    );
-  }
-
-  // ── Chat state ────────────────────────────────────────────────────
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
       content:
-        "Hi! I'm your Privy agentic wallet assistant. I can create wallets, check balances, send ETH, and sign messages on Base Sepolia testnet. I can also buy products with ETH or purchase a premium AI report using your saved credit card. What would you like to do?",
+        "Hi! I'm your Privy agentic wallet assistant. I can create wallets, check balances, send ETH, and sign messages on Base Sepolia testnet. What would you like to do?",
     },
   ]);
   const [input, setInput] = useState("");
@@ -183,10 +88,7 @@ export default function Chat() {
       const res = await fetch("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: apiMessages,
-          stripe_customer_id: stripeCustomerId ?? undefined,
-        }),
+        body: JSON.stringify({ messages: apiMessages }),
       });
 
       const data = await res.json();
@@ -201,15 +103,6 @@ export default function Chat() {
           ...prev,
           { role: "assistant", content: data.message },
         ]);
-
-        // Handle 3DS if required
-        if (
-          data.requires_stripe_action &&
-          data.stripe_client_secret &&
-          data.stripe_payment_intent_id
-        ) {
-          await handle3DS(data.stripe_client_secret, data.stripe_payment_intent_id);
-        }
       }
     } catch {
       setMessages((prev) => [
@@ -226,7 +119,14 @@ export default function Chat() {
     send(input);
   }
 
-  if (!ready) {
+  async function handleSignOut() {
+    clearSession();
+    if (privyAuthenticated) {
+      await privyLogout();
+    }
+  }
+
+  if (!isReady) {
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="flex gap-1">
@@ -238,7 +138,7 @@ export default function Chat() {
     );
   }
 
-  if (!authenticated) {
+  if (!isAuthenticated) {
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-6">
         <div className="w-16 h-16 rounded-full bg-purple-600 flex items-center justify-center text-2xl font-bold">
@@ -246,13 +146,13 @@ export default function Chat() {
         </div>
         <div className="text-center">
           <h1 className="text-2xl font-semibold text-white mb-1">Privy Agentic Wallet</h1>
-          <p className="text-gray-400 text-sm">Sign in to manage your wallets on Base Sepolia</p>
+          <p className="text-gray-400 text-sm">Sign in with Login 3.0 to manage your wallets on Base Sepolia</p>
         </div>
         <button
-          onClick={login}
+          onClick={startLogin}
           className="bg-purple-600 hover:bg-purple-500 text-white rounded-xl px-8 py-3 text-sm font-medium transition-colors"
         >
-          Sign In
+          Sign In with Login 3.0
         </button>
       </div>
     );
@@ -276,6 +176,12 @@ export default function Chat() {
                   {balance !== null ? `${balance} ETH` : "—"}
                 </span>
               </p>
+            ) : login3WalletAddress ? (
+              <p className="text-xs text-gray-400 font-mono">
+                Login 3.0: {login3WalletAddress.slice(0, 6)}...{login3WalletAddress.slice(-4)}
+                <span className="ml-2 text-gray-500">·</span>
+                <span className="ml-2 text-yellow-400">Privy syncing...</span>
+              </p>
             ) : (
               <p className="text-xs text-gray-400">Base Sepolia Testnet</p>
             )}
@@ -284,19 +190,6 @@ export default function Chat() {
             <span className="text-xs bg-green-900/50 text-green-400 px-2 py-1 rounded-full border border-green-800">
               Testnet
             </span>
-            {/* Stripe card status */}
-            {stripeCardInfo ? (
-              <span className="text-xs bg-blue-900/50 text-blue-300 px-2 py-1 rounded-full border border-blue-700">
-                {stripeCardInfo.brand} ****{stripeCardInfo.last4}
-              </span>
-            ) : (
-              <button
-                onClick={handleAddCard}
-                className="text-xs bg-blue-900/50 text-blue-300 px-2 py-1 rounded-full border border-blue-700 hover:bg-blue-800/50 transition-colors"
-              >
-                + Add Card
-              </button>
-            )}
             <a
               href="https://faucet.quicknode.com/base/sepolia"
               target="_blank"
@@ -306,7 +199,7 @@ export default function Chat() {
               Faucet
             </a>
             <button
-              onClick={logout}
+              onClick={handleSignOut}
               className="text-xs text-gray-400 hover:text-white transition-colors"
             >
               Sign Out
@@ -377,7 +270,7 @@ export default function Chat() {
         <form onSubmit={handleSubmit} className="flex gap-3">
           <input
             className="flex-1 bg-gray-800 text-white rounded-xl px-4 py-3 text-sm placeholder-gray-500 outline-none focus:ring-2 focus:ring-purple-500 transition"
-            placeholder="Create wallet, check balance, buy with ETH or card..."
+            placeholder="Ask me to create a wallet, check balance, send ETH..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
             disabled={loading}

@@ -1,12 +1,22 @@
 import Stripe from "stripe";
 import type { Tool } from "@anthropic-ai/sdk/resources/messages";
 
-if (!process.env.STRIPE_SECRET_KEY) {
-  throw new Error("Missing STRIPE_SECRET_KEY environment variable");
+function getStripeClient(): Stripe {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    throw new Error("Missing STRIPE_SECRET_KEY environment variable");
+  }
+  return new Stripe(process.env.STRIPE_SECRET_KEY, {
+    httpClient: Stripe.createFetchHttpClient(),
+  });
 }
 
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  httpClient: Stripe.createFetchHttpClient(),
+/** Lazy Stripe client — only created when first accessed */
+export const stripe = new Proxy({} as Stripe, {
+  get(_target, prop) {
+    const client = getStripeClient();
+    const value = (client as unknown as Record<string | symbol, unknown>)[prop];
+    return typeof value === "function" ? value.bind(client) : value;
+  },
 });
 
 // ──────────────────────────────────────────────

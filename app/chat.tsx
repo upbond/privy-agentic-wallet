@@ -57,14 +57,38 @@ export default function Chat() {
   const isAuthenticated = login3Authenticated;
   const isReady = ready && !login3Loading;
 
+  const [agentWallet, setAgentWallet] = useState<{ address: string } | null>(null);
   const [balance, setBalance] = useState<string | null>(null);
   const [stripeCustomerId, setStripeCustomerId] = useState<string | null>(null);
   const [stripeCardInfo, setStripeCardInfo] = useState<CardSummary | null>(null);
 
-  // ── Fetch ETH balance ──────────────────────────────────────────────
+  // ── Fetch agent wallet address from server ─────────────────────────
   useEffect(() => {
-    const address = embeddedWallet?.address;
-    if (!address) return;
+    if (!privyAuthenticated) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getAccessToken();
+        if (!token) return;
+        const res = await fetch("/api/wallet", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && data.walletAddress) {
+          setAgentWallet({ address: data.walletAddress });
+        }
+      } catch {
+        // ignore
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [privyAuthenticated, getAccessToken]);
+
+  // ── Fetch ETH balance (use agent wallet, fallback to embedded) ─────
+  const displayAddress = agentWallet?.address ?? embeddedWallet?.address;
+  useEffect(() => {
+    if (!displayAddress) return;
     fetch("https://sepolia.base.org", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -72,7 +96,7 @@ export default function Chat() {
         jsonrpc: "2.0",
         id: 1,
         method: "eth_getBalance",
-        params: [address, "latest"],
+        params: [displayAddress, "latest"],
       }),
     })
       .then((r) => r.json())
@@ -81,7 +105,7 @@ export default function Chat() {
         setBalance(eth.toFixed(4));
       })
       .catch(() => setBalance(null));
-  }, [embeddedWallet?.address]);
+  }, [displayAddress]);
 
   // ── Stripe customer ID from localStorage + URL redirect ───────────
   async function fetchCardInfo(customerId: string) {
@@ -220,6 +244,7 @@ export default function Chat() {
         body: JSON.stringify({
           messages: apiMessages,
           stripe_customer_id: stripeCustomerId ?? undefined,
+          wallet_address: embeddedWallet?.address ?? undefined,
         }),
       });
 
@@ -310,9 +335,9 @@ export default function Chat() {
           </div>
           <div className="min-w-0">
             <h1 className="font-semibold text-white">Privy Agentic Wallet</h1>
-            {embeddedWallet ? (
+            {displayAddress ? (
               <p className="text-xs text-gray-400 font-mono">
-                <span data-testid="wallet-address">{embeddedWallet.address.slice(0, 6)}...{embeddedWallet.address.slice(-4)}</span>
+                <span data-testid="wallet-address">{displayAddress.slice(0, 6)}...{displayAddress.slice(-4)}</span>
                 <span className="ml-2 text-gray-500">·</span>
                 <span data-testid="wallet-balance" className="ml-2 text-gray-300">
                   {balance !== null ? `${balance} ETH` : "—"}

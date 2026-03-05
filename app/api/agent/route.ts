@@ -39,7 +39,13 @@ For Stripe payments, always check if the customer has a saved card using stripe_
 export async function POST(req: NextRequest) {
   // JWT authentication
   const authHeader = req.headers.get("authorization");
-  const user = await authenticateRequest(authHeader);
+  const body = await req.json();
+  const { messages, stripe_customer_id, wallet_address } = body as {
+    messages: Anthropic.MessageParam[];
+    stripe_customer_id?: string;
+    wallet_address?: string;
+  };
+  const user = await authenticateRequest(authHeader, wallet_address);
 
   if (!user) {
     return NextResponse.json(
@@ -49,11 +55,6 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { messages, stripe_customer_id } = (await req.json()) as {
-      messages: Anthropic.MessageParam[];
-      stripe_customer_id?: string;
-    };
-
     const agentMessages: Anthropic.MessageParam[] = [...messages];
 
     // Capture any requires_stripe_action result from tool calls
